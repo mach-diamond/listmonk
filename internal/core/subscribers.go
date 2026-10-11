@@ -435,12 +435,30 @@ func (c *Core) UpdateSubscriberWithLists(id int, sub models.Subscriber, listIDs 
 
 	hasOptin := false
 	if !preconfirm && c.consts.SendOptinConfirmation {
-		// Send a confirmation e-mail (if there are any double opt-in lists).
-		num, err := c.h.SendOptinConfirmation(out, listIDs)
-		if assertOptin && err != nil {
-			return out, hasOptin, err
+		// Confirm only the lists this update adds. With no IDs the hook falls back to every
+		// unconfirmed list, which would re-send pending confirmations, from other brands too,
+		// whenever an existing subscriber subscribes to something else.
+		optinIDs := listIDs
+		if len(optinIDs) == 0 && len(listUUIDs) > 0 {
+			var res []listType
+			if err := c.q.GetListTypes.Select(&res, nil, pq.StringArray(listUUIDs)); err != nil {
+				c.log.Printf("error fetching list IDs for opt-in: %v", err)
+				return out, hasOptin, echo.NewHTTPError(http.StatusInternalServerError,
+					c.i18n.Ts("globals.messages.errorFetching", "name", "{globals.terms.list}", "error", pqErrMsg(err)))
+			}
+			for _, r := range res {
+				optinIDs = append(optinIDs, r.ID)
+			}
 		}
-		hasOptin = num > 0
+
+		// Send a confirmation e-mail (if there are any double opt-in lists).
+		if len(optinIDs) > 0 {
+			num, err := c.h.SendOptinConfirmation(out, optinIDs)
+			if assertOptin && err != nil {
+				return out, hasOptin, err
+			}
+			hasOptin = num > 0
+		}
 	}
 
 	return out, hasOptin, nil
