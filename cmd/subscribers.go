@@ -11,7 +11,9 @@ import (
 	"strings"
 
 	"github.com/knadh/listmonk/internal/auth"
+	"github.com/knadh/listmonk/internal/brands"
 	"github.com/knadh/listmonk/internal/i18n"
+	"github.com/knadh/listmonk/internal/manager"
 	"github.com/knadh/listmonk/internal/notifs"
 	"github.com/knadh/listmonk/internal/subimporter"
 	"github.com/knadh/listmonk/models"
@@ -44,6 +46,7 @@ type subOptin struct {
 	OptinURL string
 	UnsubURL string
 	Lists    []models.List
+	Brand    *brands.Brand
 }
 
 var (
@@ -857,7 +860,11 @@ func formatSQLExp(q string) string {
 // makeOptinNotifyHook returns an enclosed callback that sends optin confirmation e-mails.
 // This is plugged into the 'core' package to send optin confirmations when a new subscriber is
 // created via `core.CreateSubscriber()`.
-func makeOptinNotifyHook(unsubHeader bool, u *UrlConfig, q *models.Queries, i *i18n.I18n) func(sub models.Subscriber, listIDs []int) (int, error) {
+//
+// Each brand sends its own confirmation, from its own address, with links to its own
+// news host: lists are grouped by their brand tag. A double opt-in list without a
+// brand tag cannot be confirmed (there is no host to link to) and is skipped.
+func makeOptinNotifyHook(unsubHeader bool, br *brands.Registry, q *models.Queries, i *i18n.I18n) func(sub models.Subscriber, listIDs []int) (int, error) {
 	return func(sub models.Subscriber, listIDs []int) (int, error) {
 		// Fetch double opt-in lists from the given list IDs.
 		// Get the list of subscription lists where the subscriber hasn't confirmed.
@@ -867,40 +874,56 @@ func makeOptinNotifyHook(unsubHeader bool, u *UrlConfig, q *models.Queries, i *i
 			return 0, err
 		}
 
-		// None.
-		if len(lists) == 0 {
-			return 0, nil
+		// Group the lists by brand, keeping the registry's order.
+		byBrand := make(map[*brands.Brand][]models.List)
+		for _, l := range lists {
+			b := br.ByListTags(l.Tags)
+			if b == nil {
+				lo.Printf("not sending an opt-in for list %d (%s) to subscriber %d: the list has no %s tag", l.ID, l.Name, sub.ID, brands.ListTagPrefix+"<domain>")
+				continue
+			}
+			byBrand[b] = append(byBrand[b], l)
 		}
 
-		var (
-			out      = subOptin{Subscriber: sub, Lists: lists}
-			qListIDs = url.Values{}
-		)
+		sent := 0
+		for _, b := range br.All() {
+			bLists, ok := byBrand[b]
+			if !ok {
+				continue
+			}
 
-		// Construct the opt-in URL with list IDs.
-		for _, l := range out.Lists {
-			qListIDs.Add("l", l.UUID)
+			var (
+				u        = manager.NewSiteURLs(b.RootURL())
+				out      = subOptin{Subscriber: sub, Lists: bLists, Brand: b}
+				qListIDs = url.Values{}
+			)
+
+			// Construct the opt-in URL with list IDs.
+			for _, l := range out.Lists {
+				qListIDs.Add("l", l.UUID)
+			}
+			out.OptinURL = fmt.Sprintf(u.OptinURL, sub.UUID, qListIDs.Encode())
+			out.UnsubURL = fmt.Sprintf(u.UnsubURL, dummyUUID, sub.UUID)
+
+			// Unsub headers.
+			hdr := textproto.MIMEHeader{}
+			hdr.Set(models.EmailHeaderSubscriberUUID, sub.UUID)
+			manager.SetBrandHeaders(hdr, b)
+
+			// Attach List-Unsubscribe headers?
+			if unsubHeader {
+				hdr.Set("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
+				hdr.Set("List-Unsubscribe", `<`+out.UnsubURL+`>`)
+			}
+
+			// Send the e-mail.
+			if err := notifs.NotifyAs(b.FromHeader(), []string{sub.Email}, i.T("subscribers.optinSubject"), notifs.TplSubscriberOptin, out, hdr); err != nil {
+				lo.Printf("error sending opt-in e-mail for subscriber %d (%s): %s", sub.ID, sub.UUID, err)
+				return sent, err
+			}
+			sent += len(bLists)
 		}
-		out.OptinURL = fmt.Sprintf(u.OptinURL, sub.UUID, qListIDs.Encode())
-		out.UnsubURL = fmt.Sprintf(u.UnsubURL, dummyUUID, sub.UUID)
 
-		// Unsub headers.
-		hdr := textproto.MIMEHeader{}
-		hdr.Set(models.EmailHeaderSubscriberUUID, sub.UUID)
-
-		// Attach List-Unsubscribe headers?
-		if unsubHeader {
-			unsubURL := fmt.Sprintf(u.UnsubURL, dummyUUID, sub.UUID)
-			hdr.Set("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
-			hdr.Set("List-Unsubscribe", `<`+unsubURL+`>`)
-		}
-
-		// Send the e-mail.
-		if err := notifs.Notify([]string{sub.Email}, i.T("subscribers.optinSubject"), notifs.TplSubscriberOptin, out, hdr); err != nil {
-			lo.Printf("error sending opt-in e-mail for subscriber %d (%s): %s", sub.ID, sub.UUID, err)
-			return 0, err
-		}
-
-		return len(lists), nil
+		return sent, nil
 	}
 }

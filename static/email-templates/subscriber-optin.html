@@ -1,9 +1,9 @@
 {{ define "subscriber-optin" }}
-{{ template "header" . }}
-<h2>{{ L.Ts "email.optin.confirmSubTitle" }}</h2>
-<p>{{ L.Ts "email.optin.confirmSubWelcome" }} {{ .Subscriber.FirstName }}</p>
-<p>{{ L.Ts "email.optin.confirmSubInfo" }}</p>
-<ul>
+{{ template "brand-header" .Brand }}
+<h2 style="margin:0 0 12px; font-size:20px; line-height:28px;">{{ L.Ts "email.optin.confirmSubTitle" }}</h2>
+<p style="margin:0 0 12px;">{{ L.Ts "email.optin.confirmSubWelcome" }} {{ .Subscriber.FirstName }}</p>
+<p style="margin:0 0 12px;">{{ L.Ts "email.optin.confirmSubInfo" }}</p>
+<ul style="margin:0 0 12px; padding-left:20px;">
     {{ range $i, $l := .Lists }}
         {{ if eq .Type "public" }}
             <li>{{ .Name }}</li>
@@ -12,11 +12,8 @@
         {{ end }}
     {{ end }}
 </ul>
-<p>{{ L.Ts "email.optin.confirmSubHelp" }}</p>
-<p>
-    <a href="{{ .OptinURL }}" class="button">{{ L.Ts "email.optin.confirmSub" }}</a>
-</p>
-<a href="{{ .UnsubURL }}?manage=true">{{ L.T "email.unsub" }}</a>
-
-{{ template "footer" }}
+<p style="margin:0;">{{ L.Ts "email.optin.confirmSubHelp" }}</p>
+{{ template "brand-button" dict "Brand" .Brand "URL" .OptinURL "Label" (L.Ts "email.optin.confirmSub") }}
+<p style="margin:0; font-size:13px;"><a href="{{ .UnsubURL }}?manage=true" style="color:{{ .Brand.Colors.Link }};">{{ L.T "email.unsub" }}</a></p>
+{{ template "brand-footer" .Brand }}
 {{ end }}

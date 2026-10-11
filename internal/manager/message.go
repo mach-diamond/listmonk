@@ -11,6 +11,7 @@ import (
 // to message templates while they're compiled. It represents a message from
 // a campaign that's bound to a single Subscriber.
 func (m *Manager) NewCampaignMessage(c *models.Campaign, s models.Subscriber) (CampaignMessage, error) {
+	brand := m.Brand(c)
 	msg := CampaignMessage{
 		Campaign:   c,
 		Subscriber: s,
@@ -18,7 +19,8 @@ func (m *Manager) NewCampaignMessage(c *models.Campaign, s models.Subscriber) (C
 		subject:  c.Subject,
 		from:     c.FromEmail,
 		to:       s.Email,
-		unsubURL: fmt.Sprintf(m.cfg.UnsubURL, c.UUID, s.UUID),
+		unsubURL: fmt.Sprintf(m.BrandURLs(brand).UnsubURL, c.UUID, s.UUID),
+		brand:    brand,
 	}
 
 	if err := msg.render(); err != nil {

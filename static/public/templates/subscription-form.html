@@ -1,7 +1,12 @@
 {{ define "subscription-form" }}
 {{ template "header" . }}
 <section>
-    <h2>{{ L.T "public.subTitle" }}</h2>
+    {{ with .Brand }}
+        <h2>{{ or .Copy.SubscribeTitle (L.T "public.subTitle") }}</h2>
+        {{ with .Copy.SubscribeIntro }}<p class="brand-intro">{{ . }}</p>{{ end }}
+    {{ else }}
+        <h2>{{ L.T "public.subTitle" }}</h2>
+    {{ end }}
 
     <form method="post" action="" class="form">
         <div>

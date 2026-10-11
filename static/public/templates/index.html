@@ -16,14 +16,27 @@
 	<link href="/public/custom.css?v={{ .AssetVersion }}" rel="stylesheet" type="text/css">
 	<script src="/public/custom.js?v={{ .AssetVersion }}" async defer></script>
 
+	{{ with .Brand }}
+		<style>:root { {{ .CSSVars }} }</style>
+		<link href="/public/static/brand.css?v={{ $.AssetVersion }}" rel="stylesheet" type="text/css" />
+	{{ end }}
+
 	{{ if ne .FaviconURL "" }}
 		<link rel="icon" href="{{ .FaviconURL }}" type="image/x-icon" />
 	{{ else }}
 		<link rel="icon" href="/public/static/favicon.png?v={{ .AssetVersion }}" type="image/png" />
 	{{ end }}
 </head>
-<body>
+<body{{ if .Brand }} class="branded"{{ end }}>
     <div class="container wrap">
+		{{ with .Brand }}
+		<header class="header brand-header">
+			<a class="brand-mark" href="{{ $.RootURL }}/subscription/form">
+				{{ with .Logo }}<img src="{{ .URL }}" alt="{{ .Alt }}" width="{{ .Width }}" height="{{ .Height }}" />{{ end }}
+				<span class="brand-wordmark">{{ .Wordmark }}</span>
+			</a>
+		</header>
+		{{ else }}
 		<header class="header">
 			<div class="logo">
 				<a href="{{ if .EnablePublicSubPage }}{{ .RootURL}}/subscription/form{{ end }}">
@@ -35,13 +48,22 @@
 				</a>
 			</div>
 		</header>
+		{{ end }}
 {{ end }}
 
 {{ define "footer" }}
 	</div>
 	
 	<footer class="container">
-		{{ L.T "public.poweredBy" }} <a target="_blank" rel="noreferrer" href="https://listmonk.app">listmonk</a>
+		{{ with .Brand }}
+			<p class="brand-footer">
+				<a href="{{ .Site }}">{{ .Name }}</a>{{ if .Tagline }} &middot; {{ .Tagline }}{{ end }}
+				{{ if $.EnablePublicArchive }} &middot; <a href="{{ $.RootURL }}/archive">{{ L.T "public.archiveTitle" }}</a>{{ end }}
+			</p>
+			{{ if .PostalAddress }}<p class="brand-address">{{ .PostalAddress }}</p>{{ end }}
+		{{ end }}
+		<p class="powered">{{ L.T "public.poweredBy" }} <a target="_blank" rel="noreferrer" href="https://listmonk.app">listmonk</a>
+			&middot; <a target="_blank" rel="noreferrer" href="{{ .SourceURL }}">source</a></p>
 	</footer>
 </body>
 </html>

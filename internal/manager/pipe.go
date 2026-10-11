@@ -31,6 +31,14 @@ func (m *Manager) newPipe(c *models.Campaign) (*pipe, error) {
 		return nil, fmt.Errorf("unknown messenger %s on campaign %s", c.Messenger, c.Name)
 	}
 
+	// A campaign without a brand has no news host to link to and no SES
+	// configuration set; it never sends (the API refuses to start one, this
+	// catches one that changed after it was scheduled).
+	if m.Brand(c) == nil {
+		m.store.UpdateCampaignStatus(c.ID, models.CampaignStatusPaused)
+		return nil, fmt.Errorf("campaign %s: the From address %q is not a brand's sender", c.Name, c.FromEmail)
+	}
+
 	// Resolve any inline images before compiling the template.
 	if err := m.LoadInlineImages(c); err != nil {
 		return nil, err

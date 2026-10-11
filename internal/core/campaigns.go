@@ -142,10 +142,10 @@ func (c *Core) GetCampaignForPreview(id, tplID int) (models.Campaign, error) {
 	return out, nil
 }
 
-// GetArchivedCampaigns retrieves campaigns with a template body.
-func (c *Core) GetArchivedCampaigns(offset, limit int) (models.Campaigns, int, error) {
+// GetArchivedCampaigns retrieves the archived campaigns sent from a news host, with a template body.
+func (c *Core) GetArchivedCampaigns(host string, offset, limit int) (models.Campaigns, int, error) {
 	var out models.Campaigns
-	if err := c.q.GetArchivedCampaigns.Select(&out, offset, limit, campaignTplArchive); err != nil {
+	if err := c.q.GetArchivedCampaigns.Select(&out, offset, limit, campaignTplArchive, host); err != nil {
 		c.log.Printf("error fetching public campaigns: %v", err)
 		return models.Campaigns{}, 0, echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorFetching", "name", "{globals.terms.campaign}", "error", pqErrMsg(err)))

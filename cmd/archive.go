@@ -8,6 +8,7 @@ import (
 	"net/url"
 
 	"github.com/gorilla/feeds"
+	"github.com/knadh/listmonk/internal/brands"
 	"github.com/knadh/listmonk/internal/manager"
 	"github.com/knadh/listmonk/models"
 	"github.com/labstack/echo/v4"
@@ -27,7 +28,7 @@ type campArchive struct {
 func (a *App) GetCampaignArchives(c echo.Context) error {
 	// Get archives from the DB.
 	pg := a.pg.NewFromURL(c.Request().URL.Query())
-	camps, total, err := a.getCampaignArchives(pg.Offset, pg.Limit, false)
+	camps, total, err := a.getCampaignArchives(a.requestBrand(c), pg.Offset, pg.Limit, false)
 	if err != nil {
 		return err
 	}
@@ -57,7 +58,11 @@ func (a *App) GetCampaignArchivesFeed(c echo.Context) error {
 	)
 
 	// Get archives from the DB.
-	camps, _, err := a.getCampaignArchives(pg.Offset, pg.Limit, showFullContent)
+	brand := a.requestBrand(c)
+	if brand == nil {
+		return echo.NewHTTPError(http.StatusNotFound, a.i18n.T("public.notFoundTitle"))
+	}
+	camps, _, err := a.getCampaignArchives(brand, pg.Offset, pg.Limit, showFullContent)
 	if err != nil {
 		return err
 	}
@@ -81,8 +86,8 @@ func (a *App) GetCampaignArchivesFeed(c echo.Context) error {
 
 	// Generate the feed.
 	feed := &feeds.Feed{
-		Title:       a.cfg.SiteName,
-		Link:        &feeds.Link{Href: a.urlCfg.RootURL},
+		Title:       brand.Name,
+		Link:        &feeds.Link{Href: brand.RootURL()},
 		Description: a.i18n.T("public.archiveTitle"),
 		Items:       out,
 	}
@@ -99,7 +104,7 @@ func (a *App) GetCampaignArchivesFeed(c echo.Context) error {
 func (a *App) CampaignArchivesPage(c echo.Context) error {
 	// Get archives from the DB.
 	pg := a.pg.NewFromURL(c.Request().URL.Query())
-	out, total, err := a.getCampaignArchives(pg.Offset, pg.Limit, false)
+	out, total, err := a.getCampaignArchives(a.requestBrand(c), pg.Offset, pg.Limit, false)
 	if err != nil {
 		return err
 	}
@@ -130,6 +135,11 @@ func (a *App) CampaignArchivePage(c echo.Context) error {
 
 	// Get the campaign from the DB.
 	pubCamp, err := a.core.GetArchivedCampaign(0, uuid, slug)
+	if err == nil && (a.manager.Brand(&pubCamp) == nil || a.manager.Brand(&pubCamp) != a.requestBrand(c)) {
+		// Another brand's campaign: not on this site.
+		return c.Render(http.StatusNotFound, tplMessage,
+			makeMsgTpl(a.i18n.T("public.notFoundTitle"), "", a.i18n.T("public.campaignNotFound")))
+	}
 	if err != nil || pubCamp.Type != models.CampaignTypeRegular {
 		notFound := false
 
@@ -176,7 +186,7 @@ func (a *App) CampaignArchivePage(c echo.Context) error {
 // CampaignArchivePageLatest renders the latest public campaign.
 func (a *App) CampaignArchivePageLatest(c echo.Context) error {
 	// Get the latest campaign from the DB.
-	camps, _, err := a.getCampaignArchives(0, 1, true)
+	camps, _, err := a.getCampaignArchives(a.requestBrand(c), 0, 1, true)
 	if err != nil {
 		return err
 	}
@@ -190,9 +200,14 @@ func (a *App) CampaignArchivePageLatest(c echo.Context) error {
 	return c.HTML(http.StatusOK, camp.Content)
 }
 
-// getCampaignArchives fetches the public campaign archives from the DB.
-func (a *App) getCampaignArchives(offset, limit int, renderBody bool) ([]campArchive, int, error) {
-	pubCamps, total, err := a.core.GetArchivedCampaigns(offset, limit)
+// getCampaignArchives fetches a brand's public campaign archives from the DB.
+// There is no archive outside a brand's news host.
+func (a *App) getCampaignArchives(brand *brands.Brand, offset, limit int, renderBody bool) ([]campArchive, int, error) {
+	if brand == nil {
+		return []campArchive{}, 0, nil
+	}
+
+	pubCamps, total, err := a.core.GetArchivedCampaigns(brand.Host, offset, limit)
 	if err != nil {
 		return []campArchive{}, total, echo.NewHTTPError(http.StatusInternalServerError, a.i18n.T("public.errorFetchingCampaign"))
 	}
@@ -214,10 +229,11 @@ func (a *App) getCampaignArchives(offset, limit int, renderBody bool) ([]campArc
 		}
 
 		// The campaign may have a custom slug.
+		archiveURL := a.manager.BrandURLs(brand).ArchiveURL
 		if camp.ArchiveSlug.Valid {
-			archive.URL, _ = url.JoinPath(a.urlCfg.ArchiveURL, camp.ArchiveSlug.String)
+			archive.URL, _ = url.JoinPath(archiveURL, camp.ArchiveSlug.String)
 		} else {
-			archive.URL, _ = url.JoinPath(a.urlCfg.ArchiveURL, camp.UUID)
+			archive.URL, _ = url.JoinPath(archiveURL, camp.UUID)
 		}
 
 		// Render the full template body if requested.

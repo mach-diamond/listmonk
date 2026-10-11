@@ -67,8 +67,14 @@ func NotifySystem(subject, tplName string, data any, hdr textproto.MIMEHeader) e
 	return Notify(no.opt.SystemEmails, subject, tplName, data, hdr)
 }
 
-// Notify sends out an e-mail notification.
+// Notify sends out an e-mail notification from the configured from address.
 func Notify(toEmails []string, subject, tplName string, data any, hdr textproto.MIMEHeader) error {
+	return NotifyAs(no.opt.FromEmail, toEmails, subject, tplName, data, hdr)
+}
+
+// NotifyAs sends out an e-mail notification from the given address (a brand's
+// own sender, for mail that goes to subscribers).
+func NotifyAs(from string, toEmails []string, subject, tplName string, data any, hdr textproto.MIMEHeader) error {
 	if len(toEmails) == 0 {
 		return nil
 	}
@@ -85,7 +91,7 @@ func Notify(toEmails []string, subject, tplName string, data any, hdr textproto.
 	m := models.Message{
 		Messenger:   "email",
 		ContentType: no.opt.ContentType,
-		From:        no.opt.FromEmail,
+		From:        from,
 		To:          toEmails,
 		Subject:     subject,
 		Body:        body,

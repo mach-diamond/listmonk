@@ -1,0 +1,88 @@
+/* A brand's look on its news host. The palette and font come from the mail
+   registry as custom properties on :root (see templates/index.html); this file
+   only maps them onto listmonk's public page classes. */
+body.branded {
+  background: var(--brand-page);
+  color: var(--brand-text);
+  font-family: var(--brand-font);
+}
+body.branded a {
+  color: var(--brand-link);
+  text-decoration-color: currentColor;
+}
+body.branded label,
+body.branded .description {
+  color: var(--brand-muted);
+}
+body.branded .wrap {
+  background: var(--brand-panel);
+  border: 0;
+  border-radius: 8px;
+  box-shadow: none;
+  overflow: hidden;
+}
+body.branded .brand-header {
+  background: var(--brand-header);
+  margin: -40px -40px 30px -40px;
+  padding: 20px 40px;
+  border-bottom: 0;
+}
+body.branded .brand-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--brand-header-text);
+  text-decoration: none;
+}
+body.branded .brand-mark img {
+  display: block;
+}
+body.branded .brand-wordmark {
+  font-size: 1.35em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+body.branded .brand-intro {
+  color: var(--brand-muted);
+  margin-top: -10px;
+}
+body.branded .button {
+  background: var(--brand-accent);
+  color: var(--brand-accent-text);
+  border-radius: 4px;
+}
+body.branded .button:hover {
+  background: var(--brand-text);
+  color: var(--brand-panel);
+}
+body.branded .button.button-outline {
+  background: transparent;
+  border-color: var(--brand-accent);
+  color: var(--brand-accent);
+}
+body.branded input:focus {
+  border-color: var(--brand-accent);
+}
+body.branded footer {
+  color: var(--brand-muted);
+  font-size: 0.8125em;
+  line-height: 1.5;
+  text-align: center;
+}
+body.branded footer a {
+  color: var(--brand-muted);
+}
+body.branded footer p {
+  margin: 0 0 6px 0;
+}
+body.branded footer .powered {
+  margin-top: 14px;
+  opacity: 0.75;
+}
+/* style.css narrows .wrap's padding to 30px below 650px; the header bleeds to match. */
+@media screen and (max-width: 650px) {
+  body.branded .brand-header {
+    margin: -30px -30px 24px -30px;
+    padding: 16px 30px;
+  }
+}

@@ -105,6 +105,8 @@ SELECT COUNT(*) OVER () AS total, campaigns.*,
         ELSE templates.id = campaigns.archive_template_id END
     )
     WHERE campaigns.archive=true AND campaigns.type='regular' AND campaigns.status=ANY('{running, paused, finished}')
+    -- Only the campaigns a brand sends: those whose From address is at its news host ($4).
+    AND (LOWER(campaigns.from_email) LIKE '%@' || $4 || '>' OR LOWER(campaigns.from_email) LIKE '%@' || $4)
     ORDER by campaigns.created_at DESC OFFSET $1 LIMIT $2;
 
 -- name: get-campaign-stats

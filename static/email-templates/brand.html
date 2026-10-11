@@ -1,0 +1,46 @@
+{{- /*
+  Header and footer for mail a brand sends to subscribers (the opt-in
+  confirmation). Both take the *brands.Brand as their data. Inline styles and
+  tables only: mail clients ignore most <style> rules.
+*/ -}}
+{{ define "brand-header" }}
+<!doctype html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
+    <base target="_blank">
+</head>
+<body style="margin:0; padding:0; background-color:{{ .Colors.Page }};">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:{{ .Colors.Page }};">
+<tr><td align="center" style="padding:24px 12px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px; background-color:{{ .Colors.Panel }}; border-radius:8px; overflow:hidden; font-family:{{ .FontCSS }}; color:{{ .Colors.Text }}; font-size:15px; line-height:24px;">
+    <tr><td style="background-color:{{ .Colors.Header }}; padding:20px 32px;">
+        {{ if .Logo }}<img src="{{ .Logo.URL }}" alt="{{ .Logo.Alt }}" width="{{ .Logo.Width }}" height="{{ .Logo.Height }}" style="display:inline-block; vertical-align:middle; border:0; margin-right:10px;" />{{ end }}
+        <span style="vertical-align:middle; font-size:20px; font-weight:600; letter-spacing:0.04em; color:{{ .Colors.HeaderText }};">{{ .Wordmark }}</span>
+    </td></tr>
+    <tr><td style="padding:28px 32px;">
+{{ end }}
+
+{{ define "brand-button" }}
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;"><tr>
+    <td style="background-color:{{ .Brand.Colors.Accent }}; border-radius:4px;">
+        <a href="{{ .URL }}" style="display:inline-block; padding:12px 28px; font-weight:600; color:{{ .Brand.Colors.AccentText }}; text-decoration:none;">{{ .Label }}</a>
+    </td>
+</tr></table>
+{{ end }}
+
+{{ define "brand-footer" }}
+    </td></tr>
+</table>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px; font-family:{{ .FontCSS }}; color:{{ .Colors.Muted }}; font-size:12px; line-height:18px;">
+    <tr><td align="center" style="padding:16px 32px;">
+        <a href="{{ .Site }}" style="color:{{ .Colors.Muted }};">{{ .Name }}</a>{{ if .Tagline }} &middot; {{ .Tagline }}{{ end }}<br />
+        {{ .PostalAddress }}
+    </td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>
+{{ end }}

@@ -37,6 +37,7 @@ import (
 	"github.com/knadh/listmonk/internal/auth"
 	"github.com/knadh/listmonk/internal/bounce"
 	"github.com/knadh/listmonk/internal/bounce/mailbox"
+	"github.com/knadh/listmonk/internal/brands"
 	"github.com/knadh/listmonk/internal/captcha"
 	"github.com/knadh/listmonk/internal/core"
 	"github.com/knadh/listmonk/internal/i18n"
@@ -63,18 +64,15 @@ const (
 	emailMsgr = "email"
 )
 
-// UrlConfig contains various URL constants used in the app.
+// UrlConfig contains various URL constants used in the app. The embedded
+// SiteURLs are the admin host's link formats; every brand has its own (see
+// manager.BrandURLs).
 type UrlConfig struct {
-	RootURL      string `koanf:"root_url"`
-	LogoURL      string `koanf:"logo_url"`
-	FaviconURL   string `koanf:"favicon_url"`
-	LoginURL     string `koanf:"login_url"`
-	UnsubURL     string
-	LinkTrackURL string
-	ViewTrackURL string
-	OptinURL     string
-	MessageURL   string
-	ArchiveURL   string
+	manager.SiteURLs
+
+	LogoURL    string `koanf:"logo_url"`
+	FaviconURL string `koanf:"favicon_url"`
+	LoginURL   string `koanf:"login_url"`
 }
 
 // Config contains static, constant config values required by arbitrary handlers and functions.
@@ -459,30 +457,32 @@ func initUrlConfig(ko *koanf.Koanf) *UrlConfig {
 	root := strings.TrimSuffix(ko.String("app.root_url"), "/")
 
 	return &UrlConfig{
-		RootURL:    root,
+		SiteURLs:   manager.NewSiteURLs(root),
 		LogoURL:    ko.String("app.logo_url"),
 		FaviconURL: ko.String("app.favicon_url"),
 		LoginURL:   path.Join(uriAdmin, "/login"),
-
-		// Static URLS.
-		// url.com/subscription/{campaign_uuid}/{subscriber_uuid}
-		UnsubURL: fmt.Sprintf("%s/subscription/%%s/%%s", root),
-
-		// url.com/subscription/optin/{subscriber_uuid}
-		OptinURL: fmt.Sprintf("%s/subscription/optin/%%s?%%s", root),
-
-		// url.com/link/{campaign_uuid}/{subscriber_uuid}/{link_uuid}
-		LinkTrackURL: fmt.Sprintf("%s/link/%%s/%%s/%%s", root),
-
-		// url.com/link/{campaign_uuid}/{subscriber_uuid}
-		MessageURL: fmt.Sprintf("%s/campaign/%%s/%%s", root),
-
-		// url.com/archive
-		ArchiveURL: root + "/archive",
-
-		// url.com/campaign/{campaign_uuid}/{subscriber_uuid}/px.png
-		ViewTrackURL: fmt.Sprintf("%s/campaign/%%s/%%s/px.png", root),
 	}
+}
+
+// initBrands loads the newsletter brands from the mail registry named by
+// brands.registry (LISTMONK_brands__registry). listmonk refuses to start
+// without it: every public page and every campaign link depends on a brand.
+func initBrands(ko *koanf.Koanf) *brands.Registry {
+	path := ko.String("brands.registry")
+	if path == "" {
+		lo.Fatal("brands.registry is not set: point LISTMONK_brands__registry at the mail registry (registry.json)")
+	}
+
+	r, err := brands.Load(path)
+	if err != nil {
+		lo.Fatalf("error loading brands: %v", err)
+	}
+
+	for _, b := range r.All() {
+		lo.Printf("brand %s at %s (from %s)", b.Name, b.Host, b.From)
+	}
+
+	return r
 }
 
 // initConstConfig initializes the app's global constants from the given koanf instance.
@@ -588,7 +588,7 @@ func initCore(fnNotify func(sub models.Subscriber, listIDs []int) (int, error), 
 }
 
 // initCampaignManager initializes the campaign manager.
-func initCampaignManager(msgrs []manager.Messenger, q *models.Queries, u *UrlConfig, co *core.Core, md media.Store, i *i18n.I18n, ko *koanf.Koanf) *manager.Manager {
+func initCampaignManager(msgrs []manager.Messenger, q *models.Queries, u *UrlConfig, br *brands.Registry, co *core.Core, md media.Store, i *i18n.I18n, ko *koanf.Koanf) *manager.Manager {
 	if ko.Bool("passive") {
 		lo.Println("running in passive mode. won't process campaigns.")
 	}
@@ -601,13 +601,8 @@ func initCampaignManager(msgrs []manager.Messenger, q *models.Queries, u *UrlCon
 		FromEmail:             ko.String("app.from_email"),
 		IndividualTracking:    ko.Bool("privacy.individual_tracking"),
 		DisableTracking:       ko.Bool("privacy.disable_tracking"),
-		UnsubURL:              u.UnsubURL,
-		OptinURL:              u.OptinURL,
-		LinkTrackURL:          u.LinkTrackURL,
-		ViewTrackURL:          u.ViewTrackURL,
-		MessageURL:            u.MessageURL,
-		ArchiveURL:            u.ArchiveURL,
-		RootURL:               u.RootURL,
+		URLs:                  u.SiteURLs,
+		Brands:                br,
 		UnsubHeader:           ko.Bool("privacy.unsubscribe_header"),
 		SlidingWindow:         ko.Bool("app.message_sliding_window"),
 		SlidingWindowDuration: ko.Duration("app.message_sliding_window_duration"),
@@ -946,6 +941,7 @@ func initHTTPServer(cfg *Config, urlCfg *UrlConfig, i *i18n.I18n, fs stuffbin.Fi
 		EnablePublicSubPage: cfg.EnablePublicSubPage,
 		EnablePublicArchive: cfg.EnablePublicArchive,
 		IndividualTracking:  cfg.Privacy.IndividualTracking,
+		Brands:              app.brands,
 	}
 
 	// Initialize the static file server.

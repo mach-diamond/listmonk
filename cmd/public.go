@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/knadh/listmonk/internal/brands"
 	"github.com/knadh/listmonk/internal/captcha"
 	"github.com/knadh/listmonk/internal/i18n"
 	"github.com/knadh/listmonk/internal/manager"
@@ -36,6 +37,7 @@ type tplRenderer struct {
 	EnablePublicSubPage bool
 	EnablePublicArchive bool
 	IndividualTracking  bool
+	Brands              *brands.Registry
 }
 
 // tplData is the data container that is injected
@@ -51,6 +53,13 @@ type tplData struct {
 	IndividualTracking  bool
 	Data                any
 	L                   *i18n.I18n
+
+	// Brand is the brand whose news host the request came to; nil on any other
+	// host (the pages then show listmonk's own look).
+	Brand *brands.Brand
+
+	// SourceURL is where this fork's source is published (AGPL section 13).
+	SourceURL string
 }
 
 type publicTpl struct {
@@ -104,9 +113,17 @@ var (
 
 // Render executes and renders a template for echo.
 func (t *tplRenderer) Render(w io.Writer, name string, data any, c echo.Context) error {
+	siteName, rootURL := t.SiteName, t.RootURL
+	brand := t.Brands.ByHost(c.Request().Host)
+	if brand != nil {
+		siteName, rootURL = brand.Name, brand.RootURL()
+	}
+
 	return t.templates.ExecuteTemplate(w, name, tplData{
-		SiteName:            t.SiteName,
-		RootURL:             t.RootURL,
+		Brand:               brand,
+		SourceURL:           t.Brands.SourceURL,
+		SiteName:            siteName,
+		RootURL:             rootURL,
 		LogoURL:             t.LogoURL,
 		FaviconURL:          t.FaviconURL,
 		AssetVersion:        t.AssetVersion,
@@ -126,6 +143,7 @@ func (a *App) GetPublicLists(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("public.errorFetchingLists"))
 	}
+	lists = a.brandLists(a.requestBrand(c), lists)
 
 	type list struct {
 		UUID string `json:"uuid"`
@@ -232,6 +250,7 @@ func (a *App) SubscriptionPage(c echo.Context) error {
 		if err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("public.errorFetchingLists"))
 		}
+		subs = a.brandSubscriptions(a.requestBrand(c), subs)
 
 		out.Subscriptions = make([]models.Subscription, 0, len(subs))
 		for _, s := range subs {
@@ -320,6 +339,10 @@ func (a *App) SubscriptionPrefs(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("public.errorFetchingLists"))
 	}
 
+	// Only this brand's lists: saving preferences on one brand's site must not
+	// unsubscribe the subscriber from another brand's lists.
+	subs = a.brandSubscriptions(a.requestBrand(c), subs)
+
 	// Filter the lists in the request against the subscriptions in the DB.
 	unsubUUIDs := make([]string, 0, len(req.ListUUIDs))
 	for _, s := range subs {
@@ -371,6 +394,7 @@ func (a *App) OptinPage(c echo.Context) error {
 		return c.Render(http.StatusInternalServerError, tplMessage,
 			makeMsgTpl(a.i18n.T("public.errorTitle"), "", a.i18n.Ts("public.errorFetchingLists")))
 	}
+	lists = a.brandLists(a.requestBrand(c), lists)
 
 	// There are no lists to confirm.
 	if len(lists) == 0 {
@@ -379,7 +403,8 @@ func (a *App) OptinPage(c echo.Context) error {
 	}
 
 	if confirm || !a.cfg.ShowOptinPage {
-		return a.confirmOptinSubscription(c, subUUID, req.ListUUIDs, lists)
+		// The brand's lists among those requested, never a UUID from another brand.
+		return a.confirmOptinSubscription(c, subUUID, nil, lists)
 	}
 
 	var out optinTpl
@@ -431,6 +456,7 @@ func (a *App) SubscriptionFormPage(c echo.Context) error {
 		return c.Render(http.StatusInternalServerError, tplMessage,
 			makeMsgTpl(a.i18n.T("public.errorTitle"), "", a.i18n.Ts("public.errorFetchingLists")))
 	}
+	lists = a.brandLists(a.requestBrand(c), lists)
 
 	// There are no public lists available for subscription.
 	if len(lists) == 0 {
@@ -765,6 +791,21 @@ func (a *App) processSubForm(c echo.Context) (bool, error) {
 
 	for _, t := range listTypes {
 		if t == models.ListTypePrivate {
+			return false, echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("globals.messages.invalidUUID"))
+		}
+	}
+
+	// Every list must be one of this brand's public lists.
+	public, err := a.core.GetLists(models.ListTypePublic, models.ListStatusActive, true, nil)
+	if err != nil {
+		return false, echo.NewHTTPError(http.StatusInternalServerError, a.i18n.T("public.errorFetchingLists"))
+	}
+	allowed := make(map[string]bool)
+	for _, l := range a.brandLists(a.requestBrand(c), public) {
+		allowed[l.UUID] = true
+	}
+	for _, u := range req.FormListUUIDs {
+		if !allowed[u] {
 			return false, echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("globals.messages.invalidUUID"))
 		}
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/knadh/koanf/v2"
 	"github.com/knadh/listmonk/internal/auth"
 	"github.com/knadh/listmonk/internal/bounce"
+	"github.com/knadh/listmonk/internal/brands"
 	"github.com/knadh/listmonk/internal/buflog"
 	"github.com/knadh/listmonk/internal/captcha"
 	"github.com/knadh/listmonk/internal/core"
@@ -47,6 +48,7 @@ type App struct {
 	media      media.Store
 	bounce     *bounce.Manager
 	captcha    *captcha.Captcha
+	brands     *brands.Registry
 	i18n       *i18n.I18n
 	pg         *paginator.Paginator
 	events     *events.Events
@@ -198,13 +200,16 @@ func main() {
 		// Initialize static URL config.
 		urlCfg = initUrlConfig(ko)
 
+		// The newsletter brands, from the mail registry.
+		brandReg = initBrands(ko)
+
 		// Initialize i18n language map.
 		i18n = initI18n(ko.MustString("app.lang"), fs)
 
 		// Initialize the media store.
 		media = initMediaStore(ko)
 
-		fbOptinNotify = makeOptinNotifyHook(ko.Bool("privacy.unsubscribe_header"), urlCfg, queries, i18n)
+		fbOptinNotify = makeOptinNotifyHook(ko.Bool("privacy.unsubscribe_header"), brandReg, queries, i18n)
 
 		// Crud core.
 		core = initCore(fbOptinNotify, queries, db, i18n, ko)
@@ -213,7 +218,7 @@ func main() {
 		msgrs = append(initSMTPMessengers(), initPostbackMessengers(ko)...)
 
 		// Campaign manager.
-		mgr = initCampaignManager(msgrs, queries, urlCfg, core, media, i18n, ko)
+		mgr = initCampaignManager(msgrs, queries, urlCfg, brandReg, core, media, i18n, ko)
 
 		// Bulk importer.
 		importer = initImporter(queries, db, core, i18n, ko)
@@ -278,6 +283,7 @@ func main() {
 		media:      media,
 		bounce:     bounce,
 		captcha:    initCaptcha(),
+		brands:     brandReg,
 		i18n:       i18n,
 		log:        lo,
 		events:     evStream,

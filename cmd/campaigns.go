@@ -365,6 +365,17 @@ func (a *App) UpdateCampaignStatus(c echo.Context) error {
 		return err
 	}
 
+	// A campaign only goes out as one brand, with that brand's footer and unsubscribe link.
+	if req.Status == models.CampaignStatusRunning || req.Status == models.CampaignStatusScheduled {
+		camp, err := a.core.GetCampaign(id, "", "")
+		if err != nil {
+			return err
+		}
+		if err := a.checkCampaignSendable(camp); err != nil {
+			return err
+		}
+	}
+
 	// Update the campaign status in the DB.
 	out, err := a.core.UpdateCampaignStatus(id, req.Status)
 	if err != nil {

@@ -18,6 +18,7 @@ import (
 	"maps"
 
 	"github.com/Masterminds/sprig/v3"
+	"github.com/knadh/listmonk/internal/brands"
 	"github.com/knadh/listmonk/internal/i18n"
 	"github.com/knadh/listmonk/internal/notifs"
 	"github.com/knadh/listmonk/models"
@@ -107,6 +108,9 @@ type Manager struct {
 	slidingStart time.Time
 
 	tplFuncs template.FuncMap
+
+	// Link formats per brand, built once from cfg.Brands.
+	brandURLs map[*brands.Brand]SiteURLs
 }
 
 // CampaignMessage represents an instance of campaign message to be pushed out,
@@ -122,6 +126,7 @@ type CampaignMessage struct {
 	altBody  []byte
 	unsubURL string
 	headers  models.Headers
+	brand    *brands.Brand
 
 	pipe *pipe
 }
@@ -140,14 +145,11 @@ type Config struct {
 	FromEmail             string
 	IndividualTracking    bool
 	DisableTracking       bool
-	LinkTrackURL          string
-	UnsubURL              string
-	OptinURL              string
-	MessageURL            string
-	ViewTrackURL          string
-	ArchiveURL            string
-	RootURL               string
 	UnsubHeader           bool
+
+	// URLs are the admin host's link formats; Brands gives every brand its own.
+	URLs   SiteURLs
+	Brands *brands.Registry
 
 	// Interval to scan the DB for active campaign checkpoints.
 	ScanInterval time.Duration
@@ -192,6 +194,11 @@ func New(cfg Config, store Store, i *i18n.I18n, l *log.Logger) *Manager {
 		slidingStart: time.Now(),
 	}
 	m.tplFuncs = m.makeGnericFuncMap()
+
+	m.brandURLs = make(map[*brands.Brand]SiteURLs, len(cfg.Brands.All()))
+	for _, b := range cfg.Brands.All() {
+		m.brandURLs[b] = NewSiteURLs(b.RootURL())
+	}
 
 	return m
 }
@@ -369,6 +376,7 @@ func (m *Manager) GetTpl(id int) (*models.Template, error) {
 // TemplateFuncs returns the template functions to be applied into
 // compiled campaign templates.
 func (m *Manager) TemplateFuncs(c *models.Campaign) template.FuncMap {
+	u := m.SiteURLs(c)
 	f := template.FuncMap{
 		"TrackLink": func(url string, msg *CampaignMessage) string {
 			if m.cfg.DisableTracking {
@@ -380,7 +388,7 @@ func (m *Manager) TemplateFuncs(c *models.Campaign) template.FuncMap {
 				subUUID = dummyUUID
 			}
 
-			return m.trackLink(url, msg.Campaign.UUID, subUUID)
+			return m.trackLink(u.LinkTrackURL, url, msg.Campaign.UUID, subUUID)
 		},
 		"TrackView": func(msg *CampaignMessage) template.HTML {
 			if m.cfg.DisableTracking {
@@ -393,7 +401,7 @@ func (m *Manager) TemplateFuncs(c *models.Campaign) template.FuncMap {
 			}
 
 			return template.HTML(fmt.Sprintf(`<img src="%s" alt="" />`,
-				fmt.Sprintf(m.cfg.ViewTrackURL, msg.Campaign.UUID, subUUID)))
+				fmt.Sprintf(u.ViewTrackURL, msg.Campaign.UUID, subUUID)))
 		},
 		"UnsubscribeURL": func(msg *CampaignMessage) string {
 			return msg.unsubURL
@@ -404,16 +412,16 @@ func (m *Manager) TemplateFuncs(c *models.Campaign) template.FuncMap {
 		"OptinURL": func(msg *CampaignMessage) string {
 			// Add list IDs.
 			// TODO: Show private lists list on optin e-mail
-			return fmt.Sprintf(m.cfg.OptinURL, msg.Subscriber.UUID, "")
+			return fmt.Sprintf(u.OptinURL, msg.Subscriber.UUID, "")
 		},
 		"MessageURL": func(msg *CampaignMessage) string {
-			return fmt.Sprintf(m.cfg.MessageURL, c.UUID, msg.Subscriber.UUID)
+			return fmt.Sprintf(u.MessageURL, c.UUID, msg.Subscriber.UUID)
 		},
 		"ArchiveURL": func() string {
-			return m.cfg.ArchiveURL
+			return u.ArchiveURL
 		},
 		"RootURL": func() string {
-			return m.cfg.RootURL
+			return u.RootURL
 		},
 	}
 
@@ -532,6 +540,14 @@ func (m *Manager) worker() {
 				h.Set("List-Unsubscribe", `<`+msg.unsubURL+`>`)
 			}
 
+			// The brand's reply-to, its SES configuration set (bounce and complaint events,
+			// reputation kept apart from transactional mail) and a Feedback-ID for Gmail's
+			// Postmaster Tools. A campaign's own headers below can add to these.
+			if b := msg.brand; b != nil {
+				SetBrandHeaders(h, b)
+				h.Set("Feedback-ID", msg.Campaign.UUID+":"+b.Domain+":campaign:listmonk")
+			}
+
 			// Attach any custom headers.
 			for _, set := range msg.headers {
 				for hdr, val := range set {
@@ -605,8 +621,8 @@ func (m *Manager) getCurrentCampaigns() ([]int64, []int64) {
 }
 
 // trackLink register a URL and return its UUID to be used in message templates
-// for tracking links.
-func (m *Manager) trackLink(url, campUUID, subUUID string) string {
+// for tracking links. format is the LinkTrackURL of the campaign's site.
+func (m *Manager) trackLink(format, url, campUUID, subUUID string) string {
 	if m.cfg.DisableTracking {
 		return url
 	}
@@ -616,7 +632,7 @@ func (m *Manager) trackLink(url, campUUID, subUUID string) string {
 	m.linksMut.RLock()
 	if uu, ok := m.links[url]; ok {
 		m.linksMut.RUnlock()
-		return fmt.Sprintf(m.cfg.LinkTrackURL, uu, campUUID, subUUID)
+		return fmt.Sprintf(format, uu, campUUID, subUUID)
 	}
 	m.linksMut.RUnlock()
 
@@ -633,7 +649,7 @@ func (m *Manager) trackLink(url, campUUID, subUUID string) string {
 	m.links[url] = uu
 	m.linksMut.Unlock()
 
-	return fmt.Sprintf(m.cfg.LinkTrackURL, uu, campUUID, subUUID)
+	return fmt.Sprintf(format, uu, campUUID, subUUID)
 }
 
 // sendNotif sends a notification to registered admin e-mails.
