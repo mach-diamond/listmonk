@@ -50,8 +50,12 @@ func NewSiteURLs(root string) SiteURLs {
 	}
 }
 
-// Brand returns the brand a campaign sends as (by its From address), or nil.
+// Brand returns the brand a campaign sends as (by its From address), or nil,
+// also for no campaign (template validation compiles with a nil campaign).
 func (m *Manager) Brand(c *models.Campaign) *brands.Brand {
+	if c == nil {
+		return nil
+	}
 	return m.cfg.Brands.ByAddress(c.FromEmail)
 }
 
