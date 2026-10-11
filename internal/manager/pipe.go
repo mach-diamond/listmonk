@@ -20,8 +20,27 @@ type pipe struct {
 	stopped    atomic.Bool
 	withErrors atomic.Bool
 
+	// Staged sends: messages queued so far (counting those sent before this
+	// pipe started), the hold at the last stage boundary, and why the guard
+	// paused the campaign. Only the manager's Run loop touches these, and the
+	// reason is read by cleanup() after the waitgroup releases.
+	queued      int
+	nextStage   int
+	holdUntil   time.Time
+	pauseReason string
+
 	m *Manager
 }
+
+// CampaignBounces are the counts the guard judges a running campaign by.
+type CampaignBounces struct {
+	Sent        int `db:"sent"`
+	HardBounces int `db:"hard_bounces"`
+	Complaints  int `db:"complaints"`
+}
+
+// guardPoll is how long a held campaign yields before the Run loop asks again.
+const guardPoll = time.Second
 
 // newPipe adds a campaign to the process queue.
 func (m *Manager) newPipe(c *models.Campaign) (*pipe, error) {
@@ -56,11 +75,13 @@ func (m *Manager) newPipe(c *models.Campaign) (*pipe, error) {
 
 	// Add the campaign to the active map.
 	p := &pipe{
-		camp: c,
-		rate: ratecounter.NewRateCounter(time.Minute),
-		wg:   &sync.WaitGroup{},
-		m:    m,
+		camp:   c,
+		rate:   ratecounter.NewRateCounter(time.Minute),
+		wg:     &sync.WaitGroup{},
+		queued: c.Sent,
+		m:      m,
 	}
+	p.nextStage = m.cfg.Brands.Guard.NextStage(p.queued)
 
 	// Increment the waitgroup so that Wait() blocks immediately. This is necessary
 	// as a campaign pipe is created first and subscribers/messages under it are
@@ -87,8 +108,21 @@ func (m *Manager) newPipe(c *models.Campaign) (*pipe, error) {
 // in the current batch or not. A false indicates that all subscribers
 // have been processed, or that a campaign has been paused or cancelled.
 func (p *pipe) NextSubscribers() (bool, error) {
+	// Staged sends: hold at a stage boundary, pause on bad rates.
+	limit, err := p.guard()
+	if err != nil {
+		return false, err
+	}
+	if limit == 0 {
+		if p.stopped.Load() {
+			return false, nil
+		}
+		time.Sleep(guardPoll)
+		return true, nil
+	}
+
 	// Fetch the next batch of subscribers from a 'running' campaign.
-	subs, err := p.m.store.NextSubscribers(p.camp.ID, p.m.cfg.BatchSize)
+	subs, err := p.m.store.NextSubscribers(p.camp.ID, limit)
 	if err != nil {
 		return false, fmt.Errorf("error fetching campaign subscribers (%s): %v", p.camp.Name, err)
 	}
@@ -115,6 +149,7 @@ func (p *pipe) NextSubscribers() (bool, error) {
 		// Push the message to the queue while blocking and waiting until
 		// the queue is drained.
 		p.m.campMsgQ <- msg
+		p.queued++
 
 		// Check if the sliding window is active.
 		if hasSliding {
@@ -144,6 +179,54 @@ func (p *pipe) NextSubscribers() (bool, error) {
 	}
 
 	return true, nil
+}
+
+// guard applies the registry's staged-send rules before a batch. It returns how
+// many subscribers the batch may take: 0 while the campaign holds at a stage
+// or after the guard paused it (then the pipe is stopped).
+//
+// The fetch is capped at the next stage boundary, because fetching advances the
+// campaign's checkpoint: a subscriber fetched and not queued would be skipped.
+// At the boundary the campaign holds for the stage hold so bounces and
+// complaints can arrive. Its rates are judged before every batch once enough
+// mail went out (and so also at the end of every hold).
+func (p *pipe) guard() (int, error) {
+	g := p.m.cfg.Brands.Guard
+
+	if time.Now().Before(p.holdUntil) {
+		return 0, nil
+	}
+
+	if p.queued >= g.MinSent {
+		counts, err := p.m.store.GetCampaignBounceCounts(p.camp.ID)
+		if err != nil {
+			return 0, fmt.Errorf("error fetching bounce counts (%s): %v", p.camp.Name, err)
+		}
+
+		// Sent counts are flushed to the DB periodically; add what this pipe has not flushed yet.
+		sent := counts.Sent + int(p.sent.Load())
+		if reason := g.PauseReason(sent, counts.HardBounces, counts.Complaints); reason != "" {
+			p.pauseReason = reason
+			p.Stop(true)
+			p.m.log.Printf("pausing campaign %s: %s", p.camp.Name, reason)
+			return 0, nil
+		}
+	}
+
+	// A stage boundary reached: hold there before sending to more people.
+	if p.nextStage > 0 && p.queued >= p.nextStage {
+		p.holdUntil = time.Now().Add(g.StageHold())
+		p.m.log.Printf("campaign %s reached stage %d: holding until %s", p.camp.Name, p.nextStage, p.holdUntil.Format(time.RFC822Z))
+		p.nextStage = g.NextStage(p.queued)
+		return 0, nil
+	}
+
+	limit := p.m.cfg.BatchSize
+	if p.nextStage > 0 {
+		limit = min(limit, p.nextStage-p.queued)
+	}
+
+	return limit, nil
 }
 
 // OnError keeps track of the number of errors that occur while sending messages
@@ -217,7 +300,11 @@ func (p *pipe) cleanup() {
 			p.m.log.Printf("set campaign (%s) to %s", p.camp.Name, models.CampaignStatusPaused)
 		}
 
-		_ = p.m.sendNotif(p.camp, models.CampaignStatusPaused, "Too many errors")
+		reason := "Too many errors"
+		if p.pauseReason != "" {
+			reason = p.pauseReason
+		}
+		_ = p.m.sendNotif(p.camp, models.CampaignStatusPaused, reason)
 		return
 	}
 

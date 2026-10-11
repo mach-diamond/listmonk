@@ -434,6 +434,16 @@ INSERT INTO campaign_lists (campaign_id, list_id, list_name)
     (SELECT $1 as campaign_id, id, name FROM lists WHERE id=ANY($14::INT[]))
     ON CONFLICT (campaign_id, list_id) DO UPDATE SET list_name = EXCLUDED.list_name;
 
+-- name: get-campaign-guard-counts
+-- The counts the staged-send guard judges a running campaign by: messages sent,
+-- hard bounces and complaints recorded against it.
+SELECT campaigns.sent,
+    COUNT(bounces.id) FILTER (WHERE bounces.type = 'hard') AS hard_bounces,
+    COUNT(bounces.id) FILTER (WHERE bounces.type = 'complaint') AS complaints
+    FROM campaigns LEFT JOIN bounces ON (bounces.campaign_id = campaigns.id)
+    WHERE campaigns.id = $1
+    GROUP BY campaigns.id;
+
 -- name: update-campaign-counts
 UPDATE campaigns SET
     to_send=(CASE WHEN $2 != 0 THEN $2 ELSE to_send END),

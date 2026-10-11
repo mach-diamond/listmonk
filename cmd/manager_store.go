@@ -73,6 +73,13 @@ func (s *store) GetCampaign(campID int) (*models.Campaign, error) {
 	return out, err
 }
 
+// GetCampaignBounceCounts fetches a campaign's sent, hard bounce and complaint counts.
+func (s *store) GetCampaignBounceCounts(campID int) (manager.CampaignBounces, error) {
+	var out manager.CampaignBounces
+	err := s.queries.GetCampaignGuard.Get(&out, campID)
+	return out, err
+}
+
 // UpdateCampaignStatus updates a campaign's status.
 func (s *store) UpdateCampaignStatus(campID int, status string) error {
 	_, err := s.queries.UpdateCampaignStatus.Exec(campID, status)

@@ -65,6 +65,7 @@ type Queries struct {
 	GetCampaignForPreview *sqlx.Stmt `query:"get-campaign-for-preview"`
 	GetCampaignStats      *sqlx.Stmt `query:"get-campaign-stats"`
 	GetCampaignStatus     *sqlx.Stmt `query:"get-campaign-status"`
+	GetCampaignGuard      *sqlx.Stmt `query:"get-campaign-guard-counts"`
 	GetArchivedCampaigns  *sqlx.Stmt `query:"get-archived-campaigns"`
 	CampaignHasLists      *sqlx.Stmt `query:"campaign-has-lists"`
 
