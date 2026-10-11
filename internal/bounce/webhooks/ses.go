@@ -68,12 +68,24 @@ type sesMail struct {
 type SES struct {
 	mu    sync.RWMutex
 	certs map[string]*x509.Certificate
+
+	// The SNS topics we accept messages from. A valid SNS signature only proves
+	// that the message came from SNS, not from our topic: anyone can subscribe
+	// this endpoint to a topic of their own and, without this check, have the
+	// subscription confirmed and inject bounces and complaints.
+	topics map[string]bool
 }
 
 // NewSES returns a new SES instance.
-func NewSES() *SES {
+func NewSES(topicARNs []string) *SES {
+	topics := make(map[string]bool, len(topicARNs))
+	for _, t := range topicARNs {
+		topics[t] = true
+	}
+
 	return &SES{
-		certs: make(map[string]*x509.Certificate),
+		certs:  make(map[string]*x509.Certificate),
+		topics: topics,
 	}
 }
 
@@ -124,7 +136,7 @@ func (s *SES) ProcessBounce(b []byte) (models.Bounce, error) {
 		return bounce, fmt.Errorf("error unmarshalling SES notification: %v", err)
 	}
 
-	if (m.EventType != "" && m.EventType != "Bounce") ||
+	if (m.EventType != "" && m.EventType != "Bounce" && m.EventType != "Complaint") ||
 		(m.NotifType != "" && (m.NotifType != "Bounce" && m.NotifType != "Complaint")) {
 		return bounce, errors.New("notification type is not bounce")
 	}
@@ -143,7 +155,7 @@ func (s *SES) ProcessBounce(b []byte) (models.Bounce, error) {
 			typ = models.BounceTypeHard
 		}
 	}
-	if m.NotifType == "Complaint" {
+	if m.NotifType == "Complaint" || m.EventType == "Complaint" {
 		typ = models.BounceTypeComplaint
 	}
 
@@ -199,6 +211,10 @@ func (s *SES) buildSignature(n sesNotif) []byte {
 
 // verifyNotif verifies the signature on a notification payload.
 func (s *SES) verifyNotif(n sesNotif) error {
+	if !s.topics[n.TopicArn] {
+		return fmt.Errorf("SNS message from topic %q, which is not one of bounce.ses_topic_arns", n.TopicArn)
+	}
+
 	// Get the message signing certificate.
 	cert, err := s.getCert(n.SigningCertURL)
 	if err != nil {
@@ -210,7 +226,17 @@ func (s *SES) verifyNotif(n sesNotif) error {
 		return err
 	}
 
-	return cert.CheckSignature(x509.SHA1WithRSA, s.buildSignature(n), sign)
+	// SignatureVersion 2 (a topic attribute) signs with SHA256, 1 with SHA1.
+	algo := x509.SHA1WithRSA
+	switch n.SignatureVersion {
+	case "1":
+	case "2":
+		algo = x509.SHA256WithRSA
+	default:
+		return fmt.Errorf("unknown SNS signature version %q", n.SignatureVersion)
+	}
+
+	return cert.CheckSignature(algo, s.buildSignature(n), sign)
 }
 
 // getCert takes the SNS certificate URL and fetches it and caches it for the first time,

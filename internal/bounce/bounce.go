@@ -24,6 +24,7 @@ type Opt struct {
 	Mailbox                 mailbox.Opt `json:"mailbox"`
 	WebhooksEnabled         bool        `json:"webhooks_enabled"`
 	SESEnabled              bool        `json:"ses_enabled"`
+	SESTopicARNs            []string    `json:"ses_topic_arns"`
 	AzureEnabled            bool        `json:"azure_enabled"`
 	AzureSharedSecret       string      `json:"azure_shared_secret"`
 	AzureSharedSecretHeader string      `json:"azure_shared_secret_header"`
@@ -88,7 +89,7 @@ func New(opt Opt, q *Queries, lo *log.Logger) (*Manager, error) {
 
 	if opt.WebhooksEnabled {
 		if opt.SESEnabled {
-			m.SES = webhooks.NewSES()
+			m.SES = webhooks.NewSES(opt.SESTopicARNs)
 		}
 		if opt.AzureEnabled {
 			m.Azure = webhooks.NewAzure(opt.AzureSharedSecret, opt.AzureSharedSecretHeader)

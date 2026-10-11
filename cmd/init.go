@@ -823,6 +823,7 @@ func initBounceManager(cb func(models.Bounce) error, stmt *sqlx.Stmt, lo *log.Lo
 	opt := bounce.Opt{
 		WebhooksEnabled:         ko.Bool("bounce.webhooks_enabled"),
 		SESEnabled:              ko.Bool("bounce.ses_enabled"),
+		SESTopicARNs:            strings.FieldsFunc(ko.String("bounce.ses_topic_arns"), func(r rune) bool { return r == ',' || r == ' ' }),
 		AzureEnabled:            ko.Bool("bounce.azure.enabled"),
 		AzureSharedSecret:       ko.String("bounce.azure.shared_secret"),
 		AzureSharedSecretHeader: ko.String("bounce.azure.shared_secret_header"),
