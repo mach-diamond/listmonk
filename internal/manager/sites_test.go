@@ -19,7 +19,7 @@ const testRegistry = `{
 		"guard": {"minSent": 100, "maxBounceRate": 0.02, "maxComplaintRate": 0.0008, "stages": [100], "stageHoldMinutes": 30},
 		"brands": [{"domain": "machdiamondjewelry.com", "host": "news.machdiamondjewelry.com", "configurationSet": "marketing-x",
 			"from": "hello@news.machdiamondjewelry.com", "replyTo": "socials@machdiamondjewelry.com", "site": "https://machdiamondjewelry.com",
-			"postalAddress": "", "font": "sans-serif", "colors": {"page": "#ffffff", "panel": "#ffffff", "text": "#000000", "muted": "#555555",
+			"postalAddress": [], "font": "sans-serif", "colors": {"page": "#ffffff", "panel": "#ffffff", "text": "#000000", "muted": "#555555",
 			"header": "#000000", "headerText": "#ffffff", "accent": "#000000", "accentText": "#ffffff", "link": "#0000ff"}}]
 	}
 }`

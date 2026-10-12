@@ -75,6 +75,10 @@ body.branded footer a {
 body.branded footer p {
   margin: 0 0 6px 0;
 }
+/* An address line is one unit: it moves to the next line whole, never splits (ZIP+4). */
+body.branded footer .nowrap {
+  white-space: nowrap;
+}
 body.branded footer .powered {
   margin-top: 14px;
   opacity: 0.75;

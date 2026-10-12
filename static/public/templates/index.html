@@ -60,7 +60,7 @@
 				<a href="{{ .Site }}">{{ .Name }}</a>{{ if .Tagline }} &middot; {{ .Tagline }}{{ end }}
 				{{ if $.EnablePublicArchive }} &middot; <a href="{{ $.RootURL }}/archive">{{ L.T "public.archiveTitle" }}</a>{{ end }}
 			</p>
-			{{ if .PostalAddress }}<p class="brand-address">{{ .PostalAddress }}</p>{{ end }}
+			{{ if .HasPostalAddress }}<p class="brand-address">{{ range $i, $line := .PostalAddress }}{{ if $i }}, {{ end }}<span class="nowrap">{{ $line }}</span>{{ end }}</p>{{ end }}
 		{{ end }}
 		<p class="powered">{{ L.T "public.poweredBy" }} <a target="_blank" rel="noreferrer" href="https://listmonk.app">listmonk</a>
 			&middot; <a target="_blank" rel="noreferrer" href="{{ .SourceURL }}">source</a></p>

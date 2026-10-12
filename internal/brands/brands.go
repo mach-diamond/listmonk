@@ -37,19 +37,19 @@ var (
 
 // Brand is one newsletter site: its own host, sender, look and footer.
 type Brand struct {
-	Domain           string `json:"domain"`
-	Host             string `json:"host"`
-	ConfigurationSet string `json:"configurationSet"`
-	From             string `json:"from"`
-	ReplyTo          string `json:"replyTo"`
-	Site             string `json:"site"`
-	PostalAddress    string `json:"postalAddress"`
-	Wordmark         string `json:"wordmark"`
-	Tagline          string `json:"tagline"`
-	Font             string `json:"font"`
-	Logo             *Logo  `json:"logo"`
-	Colors           Colors `json:"colors"`
-	Copy             Copy   `json:"copy"`
+	Domain           string   `json:"domain"`
+	Host             string   `json:"host"`
+	ConfigurationSet string   `json:"configurationSet"`
+	From             string   `json:"from"`
+	ReplyTo          string   `json:"replyTo"`
+	Site             string   `json:"site"`
+	PostalAddress    []string `json:"postalAddress"` // one entry per line, as on an envelope
+	Wordmark         string   `json:"wordmark"`
+	Tagline          string   `json:"tagline"`
+	Font             string   `json:"font"`
+	Logo             *Logo    `json:"logo"`
+	Colors           Colors   `json:"colors"`
+	Copy             Copy     `json:"copy"`
 
 	// Name is the brand's display name, from the registry's domains[].brand.
 	Name string `json:"-"`
@@ -116,7 +116,12 @@ func (b *Brand) ListTag() string {
 // HasPostalAddress tells whether the brand may send: CAN-SPAM requires a
 // physical postal address in every commercial message.
 func (b *Brand) HasPostalAddress() bool {
-	return strings.TrimSpace(b.PostalAddress) != ""
+	for _, line := range b.PostalAddress {
+		if strings.TrimSpace(line) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // Guard holds the staged-send and auto-pause rules for every campaign.

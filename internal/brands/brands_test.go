@@ -30,7 +30,7 @@ func doc(brands string) string {
 func brand(domain, host, from, replyTo string) string {
 	return `{"domain": "` + domain + `", "host": "` + host + `", "configurationSet": "marketing-x",
 		"from": "` + from + `", "replyTo": "` + replyTo + `", "site": "https://` + domain + `",
-		"postalAddress": "", "font": "'Inter', -apple-system, sans-serif", "colors": ` + colors + `}`
+		"postalAddress": [], "font": "'Inter', -apple-system, sans-serif", "colors": ` + colors + `}`
 }
 
 func valid(t *testing.T) *Registry {
@@ -166,5 +166,19 @@ func TestGuard(t *testing.T) {
 		if got := g.NextStage(queued); got != want {
 			t.Errorf("NextStage(%d) = %d, want %d", queued, got, want)
 		}
+	}
+}
+
+func TestPostalAddressLines(t *testing.T) {
+	b := &Brand{}
+	for _, lines := range [][]string{nil, {}, {"", "  "}} {
+		b.PostalAddress = lines
+		if b.HasPostalAddress() {
+			t.Errorf("%q must not count as an address", lines)
+		}
+	}
+	b.PostalAddress = []string{"7901 4TH ST N STE 300", "ST PETERSBURG FL 33702-4399", "USA"}
+	if !b.HasPostalAddress() {
+		t.Error("a real address must count")
 	}
 }
