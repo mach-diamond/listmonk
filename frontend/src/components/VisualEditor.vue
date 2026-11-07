@@ -81,7 +81,7 @@ export default {
       // onChange(), which is required to set the source+HTML state in the parent for preview to work.
       // Couldn't figure out if there was an on load/on init event etc. in email-builder, so brute force it
       // with a timer.
-      let n = 10;
+      let n = 0;
       const timer = window.setInterval(() => {
         const container = iframe.contentWindow.document.getElementById('visual-editor-container');
         if (container && container.hasChildNodes()) {
@@ -164,7 +164,7 @@ export default {
     window.addEventListener('message', this.onSidebarMount, false);
   },
 
-  unmounted() {
+  beforeDestroy() {
     window.removeEventListener('message', this.onSidebarMount, false);
   },
 };
