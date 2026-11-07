@@ -108,6 +108,8 @@ export default Vue.extend({
 
   data() {
     return {
+      isCreating: false,
+
       // Binds form input values.
       form: {
         name: '',
@@ -153,10 +155,18 @@ export default Vue.extend({
         body_source: this.form.bodySource,
       };
 
+      // Claimed synchronously: Buefy's :loading does not stop a second Enter.
+      if (this.isCreating) {
+        return;
+      }
+      this.isCreating = true;
+
       this.$api.createTemplate(data).then((d) => {
         this.$emit('finished');
         this.$parent.close();
         this.$utils.toast(this.$t('globals.messages.created', { name: d.name }));
+      }).finally(() => {
+        this.isCreating = false;
       });
     },
 

@@ -343,6 +343,8 @@ export default Vue.extend({
 
   data() {
     return {
+      isCreating: false,
+
       contentTypes: Object.freeze({
         richtext: this.$t('campaigns.richText'),
         html: this.$t('campaigns.rawHTML'),
@@ -582,8 +584,16 @@ export default Vue.extend({
         media: this.form.media.map((m) => m.id),
       };
 
+      // Claimed synchronously: Buefy's :loading does not stop a second Enter.
+      if (this.isCreating) {
+        return false;
+      }
+      this.isCreating = true;
+
       this.$api.createCampaign(data).then((d) => {
         this.$router.push({ name: 'campaign', hash: '#content', params: { id: d.id } });
+      }).finally(() => {
+        this.isCreating = false;
       });
       return false;
     },
