@@ -302,6 +302,11 @@ export default Vue.extend({
       pollID: null,
       campaignStatsData: {},
 
+      // The search text of the request whose rows are on screen. The search
+      // box is live (applied only on submit), so bulk delete-by-query uses
+      // this, not queryParams.query.
+      appliedQuery: '',
+
       // Table bulk row selection states.
       bulk: {
         checked: [],
@@ -369,9 +374,11 @@ export default Vue.extend({
     },
 
     getCampaigns() {
+      const query = this.queryParams.query.replace(/[^\p{L}\p{N}\s]/gu, ' ');
+      this.appliedQuery = query;
       this.$api.getCampaigns({
         page: this.queryParams.page,
-        query: this.queryParams.query.replace(/[^\p{L}\p{N}\s]/gu, ' '),
+        query,
         order_by: this.queryParams.orderBy,
         order: this.queryParams.order,
         no_body: true,
@@ -492,6 +499,8 @@ export default Vue.extend({
     },
 
     deleteCampaigns() {
+      // Captured when the action starts, not when the confirm callback runs.
+      const appliedQuery = this.appliedQuery;
       const name = this.$tc('globals.terms.campaign', this.numSelectedCampaigns);
 
       const fn = () => {
@@ -501,7 +510,7 @@ export default Vue.extend({
           params.id = this.bulk.checked.map((c) => c.id);
         } else {
           // 'All' is selected, delete by query.
-          params.query = this.queryParams.query.replace(/[^\p{L}\p{N}\s]/gu, ' ');
+          params.query = appliedQuery;
           params.all = this.bulk.all;
         }
 

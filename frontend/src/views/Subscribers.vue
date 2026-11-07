@@ -216,6 +216,7 @@ export default Vue.extend({
       isEditing: false,
       isFormVisible: false,
       isBulkListFormVisible: false,
+      bulkListQuery: null,
 
       // Table bulk row selection states.
       bulk: {
@@ -224,6 +225,14 @@ export default Vue.extend({
       },
 
       queryInput: '',
+
+      // The search/query/list/status filters of the request whose rows are on
+      // screen. The query inputs are live (they change on every keystroke
+      // without re-querying), so bulk by-query actions must use this, not
+      // queryParams, or they act on a set the "N selected" count does not describe.
+      appliedQuery: {
+        search: '', query: '', listID: null, subStatus: null,
+      },
 
       // Query params to filter the getSubscribers() API call.
       queryParams: {
@@ -304,6 +313,8 @@ export default Vue.extend({
     },
 
     showBulkListForm() {
+      // The form confirms later; fix the target set now.
+      this.bulkListQuery = { ...this.appliedQuery };
       this.isBulkListFormVisible = true;
     },
 
@@ -361,9 +372,17 @@ export default Vue.extend({
         delete qp.queryExp;
       }
 
+      const applied = {
+        search: qp.search || '',
+        query: this.queryParams.queryExp,
+        listID: this.queryParams.listID,
+        subStatus: this.queryParams.subStatus,
+      };
+
       this.$nextTick(() => {
         this.$api.getSubscribers(qp).then(() => {
           this.bulk.checked = [];
+          this.appliedQuery = applied;
         });
       });
     },
@@ -382,6 +401,8 @@ export default Vue.extend({
     },
 
     blocklistSubscribers() {
+      // Captured when the action starts, not when the confirm callback runs.
+      const q = { ...this.appliedQuery };
       let fn = null;
       if (!this.bulk.all && this.bulk.checked.length > 0) {
         // If 'all' is not selected, blocklist subscribers by IDs.
@@ -394,10 +415,10 @@ export default Vue.extend({
         // 'All' is selected, blocklist by query.
         fn = () => {
           this.$api.blocklistSubscribersByQuery({
-            search: this.queryParams.search,
-            query: this.queryParams.queryExp,
-            list_ids: this.queryParams.listID ? [this.queryParams.listID] : null,
-            subscription_status: this.queryParams.subStatus,
+            search: q.search,
+            query: q.query,
+            list_ids: q.listID ? [q.listID] : null,
+            subscription_status: q.subStatus,
           }).then(() => this.querySubscribers());
         };
       }
@@ -436,6 +457,8 @@ export default Vue.extend({
     },
 
     deleteSubscribers() {
+      // Captured when the action starts, not when the confirm callback runs.
+      const q = { ...this.appliedQuery };
       let fn = null;
       if (!this.bulk.all && this.bulk.checked.length > 0) {
         // If 'all' is not selected, delete subscribers by IDs.
@@ -454,11 +477,11 @@ export default Vue.extend({
           this.$api.deleteSubscribersByQuery({
             // If the query expression is empty, explicitly pass `all=true`
             // so that the backend deletes all records in the DB with an empty query string.
-            all: this.queryParams.queryExp.trim() === '' && this.queryParams.search.trim() === '',
-            search: this.queryParams.search,
-            query: this.queryParams.queryExp,
-            list_ids: this.queryParams.listID ? [this.queryParams.listID] : null,
-            subscription_status: this.queryParams.subStatus,
+            all: q.query.trim() === '' && q.search.trim() === '',
+            search: q.search,
+            query: q.query,
+            list_ids: q.listID ? [q.listID] : null,
+            subscription_status: q.subStatus,
           }).then(() => {
             this.querySubscribers();
 
@@ -474,11 +497,11 @@ export default Vue.extend({
     },
 
     bulkChangeLists(action, preconfirm, lists) {
+      const q = this.bulkListQuery || this.appliedQuery;
       const data = {
         action,
-        query: this.fullQueryExp,
-        search: this.queryParams.search,
-        list_ids: this.queryParams.listID ? [this.queryParams.listID] : null,
+        search: q.search,
+        list_ids: q.listID ? [q.listID] : null,
         target_list_ids: lists.map((l) => l.id),
       };
 
@@ -493,8 +516,8 @@ export default Vue.extend({
         data.ids = this.bulk.checked.map((s) => s.id);
       } else {
         // 'All' is selected, perform by query.
-        data.query = this.queryParams.queryExp;
-        data.subscription_status = this.queryParams.subStatus;
+        data.query = q.query;
+        data.subscription_status = q.subStatus;
         fn = this.$api.addSubscribersToListsByQuery;
       }
 
