@@ -187,6 +187,7 @@
 <script>
 import Vue from 'vue';
 import { mapState } from 'vuex';
+import { beginQuery, canActOnQuery } from '../bulkTarget';
 import EmptyPlaceholder from '../components/EmptyPlaceholder.vue';
 import ListForm from './ListForm.vue';
 
@@ -211,10 +212,11 @@ export default Vue.extend({
         status: this.$route.query.status || 'active',
       },
 
-      // The search text of the request whose rows are on screen. The search
-      // box is live (applied only on submit), so bulk delete-by-query uses
-      // this, not queryParams.query.
-      appliedQuery: '',
+      // The search text of the request whose rows are on screen, null until the
+      // first response. The search box is live (applied only on submit), so bulk
+      // delete-by-query uses this, not queryParams.query.
+      appliedQuery: null,
+      querySeq: 0,
 
       // Table bulk row selection states.
       bulk: {
@@ -271,7 +273,7 @@ export default Vue.extend({
 
     getLists() {
       const query = this.queryParams.query.replace(/[^\p{L}\p{N}\s]/gu, ' ');
-      this.appliedQuery = query;
+      const commit = beginQuery(this, query);
       this.$api.queryLists({
         page: this.queryParams.page,
         query,
@@ -279,7 +281,9 @@ export default Vue.extend({
         order: this.queryParams.order,
         status: this.queryParams.status,
       }).then((resp) => {
-        this.lists = resp;
+        commit(() => {
+          this.lists = resp;
+        });
       });
 
       // Also fetch the minimal lists for the global store that appears
@@ -313,19 +317,27 @@ export default Vue.extend({
     },
 
     deleteLists() {
-      // Captured when the action starts, not when the confirm callback runs.
-      const appliedQuery = this.appliedQuery;
+      // Captured when the action starts, not when the confirm callback runs: a
+      // response landing under the dialog can change the selection.
+      const { appliedQuery } = this;
+      const ids = !this.bulk.all && this.bulk.checked.length > 0 ? this.bulk.checked.map((l) => l.id) : null;
+      if (!ids && !canActOnQuery(this, appliedQuery)) {
+        return;
+      }
       const name = this.$tc('globals.terms.list', this.numSelectedCampaigns);
 
       const fn = () => {
         const params = {};
-        if (!this.bulk.all && this.bulk.checked.length > 0) {
+        if (ids) {
           // If 'all' is not selected, delete lists by IDs.
-          params.id = this.bulk.checked.map((l) => l.id);
+          params.id = ids;
         } else {
           // 'All' is selected, delete by query.
+          if (!canActOnQuery(this, appliedQuery)) {
+            return;
+          }
           params.query = appliedQuery;
-          params.all = this.bulk.all;
+          params.all = appliedQuery.trim() === '';
         }
 
         this.$api.deleteLists(params)

@@ -194,6 +194,7 @@
 <script>
 import Vue from 'vue';
 import { mapState } from 'vuex';
+import { beginQuery, canActOnQuery } from '../bulkTarget';
 import EmptyPlaceholder from '../components/EmptyPlaceholder.vue';
 import { uris } from '../constants';
 import SubscriberBulkList from './SubscriberBulkList.vue';
@@ -216,7 +217,7 @@ export default Vue.extend({
       isEditing: false,
       isFormVisible: false,
       isBulkListFormVisible: false,
-      bulkListQuery: null,
+      bulkListTarget: null,
 
       // Table bulk row selection states.
       bulk: {
@@ -227,12 +228,12 @@ export default Vue.extend({
       queryInput: '',
 
       // The search/query/list/status filters of the request whose rows are on
-      // screen. The query inputs are live (they change on every keystroke
-      // without re-querying), so bulk by-query actions must use this, not
-      // queryParams, or they act on a set the "N selected" count does not describe.
-      appliedQuery: {
-        search: '', query: '', listID: null, subStatus: null,
-      },
+      // screen, null until the first response. The query inputs are live (they
+      // change on every keystroke without re-querying), so bulk by-query actions
+      // must use this, not queryParams, or they act on a set the "N selected"
+      // count does not describe.
+      appliedQuery: null,
+      querySeq: 0,
 
       // Query params to filter the getSubscribers() API call.
       queryParams: {
@@ -313,8 +314,16 @@ export default Vue.extend({
     },
 
     showBulkListForm() {
-      // The form confirms later; fix the target set now.
-      this.bulkListQuery = { ...this.appliedQuery };
+      // The form confirms later; fix the target set now. A response landing while
+      // it is open clears the checked rows, which must not turn a by-ID change
+      // into a by-query one.
+      if (!this.bulk.all && this.bulk.checked.length > 0) {
+        this.bulkListTarget = { ids: this.bulk.checked.map((s) => s.id) };
+      } else if (canActOnQuery(this, this.appliedQuery)) {
+        this.bulkListTarget = { query: this.appliedQuery };
+      } else {
+        return;
+      }
       this.isBulkListFormVisible = true;
     },
 
@@ -372,17 +381,18 @@ export default Vue.extend({
         delete qp.queryExp;
       }
 
-      const applied = {
+      const commit = beginQuery(this, {
         search: qp.search || '',
         query: this.queryParams.queryExp,
         listID: this.queryParams.listID,
         subStatus: this.queryParams.subStatus,
-      };
+      });
 
       this.$nextTick(() => {
         this.$api.getSubscribers(qp).then(() => {
-          this.bulk.checked = [];
-          this.appliedQuery = applied;
+          commit(() => {
+            this.bulk.checked = [];
+          });
         });
       });
     },
@@ -402,7 +412,7 @@ export default Vue.extend({
 
     blocklistSubscribers() {
       // Captured when the action starts, not when the confirm callback runs.
-      const q = { ...this.appliedQuery };
+      const q = this.appliedQuery;
       let fn = null;
       if (!this.bulk.all && this.bulk.checked.length > 0) {
         // If 'all' is not selected, blocklist subscribers by IDs.
@@ -413,7 +423,13 @@ export default Vue.extend({
         };
       } else {
         // 'All' is selected, blocklist by query.
+        if (!canActOnQuery(this, q)) {
+          return;
+        }
         fn = () => {
+          if (!canActOnQuery(this, q)) {
+            return;
+          }
           this.$api.blocklistSubscribersByQuery({
             search: q.search,
             query: q.query,
@@ -458,7 +474,7 @@ export default Vue.extend({
 
     deleteSubscribers() {
       // Captured when the action starts, not when the confirm callback runs.
-      const q = { ...this.appliedQuery };
+      const q = this.appliedQuery;
       let fn = null;
       if (!this.bulk.all && this.bulk.checked.length > 0) {
         // If 'all' is not selected, delete subscribers by IDs.
@@ -473,7 +489,13 @@ export default Vue.extend({
         };
       } else {
         // 'All' is selected, delete by query.
+        if (!canActOnQuery(this, q)) {
+          return;
+        }
         fn = () => {
+          if (!canActOnQuery(this, q)) {
+            return;
+          }
           this.$api.deleteSubscribersByQuery({
             // If the query expression is empty, explicitly pass `all=true`
             // so that the backend deletes all records in the DB with an empty query string.
@@ -497,11 +519,9 @@ export default Vue.extend({
     },
 
     bulkChangeLists(action, preconfirm, lists) {
-      const q = this.bulkListQuery || this.appliedQuery;
+      const { ids, query: q } = this.bulkListTarget;
       const data = {
         action,
-        search: q.search,
-        list_ids: q.listID ? [q.listID] : null,
         target_list_ids: lists.map((l) => l.id),
       };
 
@@ -510,12 +530,17 @@ export default Vue.extend({
       }
 
       let fn = null;
-      if (!this.bulk.all && this.bulk.checked.length > 0) {
+      if (ids) {
         // If 'all' is not selected, perform by IDs.
         fn = this.$api.addSubscribersToLists;
-        data.ids = this.bulk.checked.map((s) => s.id);
+        data.ids = ids;
       } else {
         // 'All' is selected, perform by query.
+        if (!canActOnQuery(this, q)) {
+          return;
+        }
+        data.search = q.search;
+        data.list_ids = q.listID ? [q.listID] : null;
         data.query = q.query;
         data.subscription_status = q.subStatus;
         fn = this.$api.addSubscribersToListsByQuery;

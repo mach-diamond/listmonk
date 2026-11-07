@@ -185,6 +185,7 @@
     "globals.messages.confirmDelete": "Delete {num} {name}?",
     "globals.messages.numSelected": "{num} selected",
     "globals.messages.confirm": "Are you sure?",
+    "globals.messages.bulkTargetStale": "Nothing was changed: the list on screen is not current. Reload it and select again.",
     "globals.messages.confirmDiscard": "Discard changes?",
     "globals.messages.copied": "Copied",
     "globals.messages.created": "\"{name}\" created",
