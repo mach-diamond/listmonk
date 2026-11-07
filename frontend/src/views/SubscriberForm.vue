@@ -192,6 +192,8 @@ export default Vue.extend({
 
   data() {
     return {
+      isSendingOptin: false,
+
       // Binds form input values. This is populated by subscriber props passed
       // from the parent component in mounted().
       form: {
@@ -304,8 +306,17 @@ export default Vue.extend({
     },
 
     sendOptinConfirmation() {
+      // Claimed synchronously so a double click sends one email. A later,
+      // deliberate click after the response is still a new resend.
+      if (this.isSendingOptin) {
+        return;
+      }
+      this.isSendingOptin = true;
+
       this.$api.sendSubscriberOptin(this.form.id).then(() => {
         this.$utils.toast(this.$t('subscribers.sentOptinConfirm'));
+      }).finally(() => {
+        this.isSendingOptin = false;
       });
     },
 
