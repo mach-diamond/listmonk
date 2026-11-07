@@ -4,7 +4,7 @@
     <div class="columns">
       <div class="column is-three-quarters is-inline-flex">
         <b-field :label="$t('campaigns.format')" label-position="on-border" class="mr-4 mb-0">
-          <b-select v-model="contentTypeSel" :disabled="disabled" name="content_type">
+          <b-select v-model="contentTypeSel" :disabled="disabled || isConverting" name="content_type">
             <option v-for="(name, f) in contentTypes" :key="f" name="format" :value="f" :data-cy="`check-${f}`">
               {{ name }}
             </option>
@@ -128,6 +128,7 @@ export default {
       isVisualTplSelector: false,
       isVisualTplDisabled: false,
       contentTypeSel: this.$props.value.contentType,
+      isConverting: false,
       templateId: null,
       visualTemplateId: null,
     };
@@ -200,15 +201,30 @@ export default {
         // Markdown to HTML requires a backend call.
       } else if (from === 'markdown' && (to === 'richtext' || to === 'html')) {
         skip = true;
+        const sent = this.self.body;
+        this.isConverting = true;
         this.$api.convertCampaignContent({
           id: 1, body, from, to,
         }).then((data) => {
           this.$nextTick(() => {
+            // The body was edited while the call ran: applying the result
+            // would overwrite that edit, so keep the old type and body.
+            if (this.self.body !== sent) {
+              this.contentTypeSel = from;
+              return;
+            }
+
             // Both type + body should be updated in one cycle to avoid firing
             // multiple events.
             this.self.contentType = to;
             this.self.body = this.beautifyHTML(data.trim());
           });
+        }).catch(() => {
+          // The type did not change; make the select say so (the API layer
+          // has already toasted the error).
+          this.contentTypeSel = from;
+        }).finally(() => {
+          this.isConverting = false;
         });
 
         // Plain to an HTML type, change plain line breaks to HTML breaks.
