@@ -17,10 +17,28 @@ const http = axios.create({
 
 const utils = new Utils();
 
+// Requests in flight per `loading` model, so a fast response does not clear the
+// loading state while a slower request for the same model is still running.
+const inflight = {};
+
+// Latest request number per `store` model. Only the newest request's response
+// is committed, so a slow older response cannot overwrite a newer page.
+const storeSeq = {};
+
+const setLoading = (model, delta) => {
+  inflight[model] = Math.max(0, (inflight[model] || 0) + delta);
+  store.commit('setLoading', { model, status: inflight[model] > 0 });
+};
+
 // Intercept requests to set the 'loading' state of a model.
 http.interceptors.request.use((config) => {
   if ('loading' in config) {
-    store.commit('setLoading', { model: config.loading, status: true });
+    setLoading(config.loading, 1);
+  }
+  if ('store' in config) {
+    storeSeq[config.store] = (storeSeq[config.store] || 0) + 1;
+    // eslint-disable-next-line no-param-reassign
+    config.storeSeq = storeSeq[config.store];
   }
   return config;
 }, (error) => Promise.reject(error));
@@ -29,7 +47,7 @@ http.interceptors.request.use((config) => {
 http.interceptors.response.use((resp) => {
   // Clear the loading state for a model.
   if ('loading' in resp.config) {
-    store.commit('setLoading', { model: resp.config.loading, status: false });
+    setLoading(resp.config.loading, -1);
   }
 
   let data = {};
@@ -59,7 +77,7 @@ http.interceptors.response.use((resp) => {
   }
 
   // Store the API response for a model.
-  if ('store' in resp.config) {
+  if ('store' in resp.config && resp.config.storeSeq === storeSeq[resp.config.store]) {
     store.commit('setModelResponse', { model: resp.config.store, data });
   }
 
@@ -67,7 +85,7 @@ http.interceptors.response.use((resp) => {
 }, (err) => {
   // Clear the loading state for a model.
   if ('loading' in err.config) {
-    store.commit('setLoading', { model: err.config.loading, status: false });
+    setLoading(err.config.loading, -1);
   }
 
   let msg = '';
