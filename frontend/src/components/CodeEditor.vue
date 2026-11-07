@@ -29,7 +29,6 @@ export default {
     return {
       data: '',
       editor: null,
-      internalUpdate: false,
     };
   },
 
@@ -39,7 +38,6 @@ export default {
   mounted() {
     const onUpdate = EditorView.updateListener.of((update) => {
       if (update.docChanged) {
-        this.internalUpdate = true;
         this.$emit('input', update.state.doc.toString());
       }
     });
@@ -119,11 +117,12 @@ export default {
 
   watch: {
     value(val) {
-      if (!this.internalUpdate) {
+      // The echo of our own edit equals the document and is skipped; any other
+      // value is an external change and must reach the editor every time.
+      if (val !== this.editor.state.doc.toString()) {
         this.editor.dispatch({
           changes: { from: 0, to: this.editor.state.doc.length, insert: val },
         });
-        this.internalUpdate = false;
       }
     },
   },
