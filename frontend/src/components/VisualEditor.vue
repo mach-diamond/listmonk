@@ -30,6 +30,7 @@ export default {
   data() {
     return {
       isMediaVisible: false,
+      resetTimer: null,
     };
   },
 
@@ -82,17 +83,18 @@ export default {
       // Couldn't figure out if there was an on load/on init event etc. in email-builder, so brute force it
       // with a timer.
       let n = 0;
-      const timer = window.setInterval(() => {
+      window.clearInterval(this.resetTimer);
+      this.resetTimer = window.setInterval(() => {
         const container = iframe.contentWindow.document.getElementById('visual-editor-container');
         if (container && container.hasChildNodes()) {
           em.resetDocument(source);
-          window.clearInterval(timer);
+          window.clearInterval(this.resetTimer);
           return;
         }
 
         n += 1;
         if (n > 10) {
-          window.clearInterval(timer);
+          window.clearInterval(this.resetTimer);
         }
       }, 100);
     },
@@ -165,6 +167,7 @@ export default {
   },
 
   beforeDestroy() {
+    window.clearInterval(this.resetTimer);
     window.removeEventListener('message', this.onSidebarMount, false);
   },
 };
